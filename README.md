@@ -20,6 +20,21 @@ Tip: /help for help and usage examples.
 \|/                                                                                                                                                          ==============================================================
 ```
 
+# How to Use
+
+```sh
+C:\Users\Simon\KAPE\KAPE>run-kape /help
+Usage:
+      run-kape.bat /list                                     > Show available configurations and exit
+      run-kape.bat /help                                     > Show this help and exit
+      run-kape.bat /banner                                   > Show banner and exit
+      run-kape.bat NAME SRC DEST_ROOT ZIP_TAG                > Name of CLI. Runs each CLI line, splits --target A,B,C
+      run-kape.bat NAME SRC DEST_ROOT ZIP_TAG /parallel      > Same, but run targets in parallel
+Examples:
+      run-kape.bat test "C:" ".\out" "CASE-SLO"
+      run-kape.bat test "C:" ".\out" "CASE-SLO" /parallel
+```
+
 Do not forget that for the script to run, kape.exe must be present, with its folders and respective templates.
 Example of the repository structure can be:
 ```text
