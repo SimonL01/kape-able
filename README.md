@@ -22,6 +22,9 @@ Tip: /help for help and usage examples.
 
 # How to Use
 
+> [!CAUTION]
+> Need Admin rights to run !!!
+
 ```sh
 C:\Users\Simon\KAPE\KAPE>run-kape /help
 Usage:
