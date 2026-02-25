@@ -68,4 +68,18 @@ KAPE is not immune to broken reparse points, but the main script and its jobs st
 
 ![](reparse-point-failure.png)
 
+# Useful Links
+
+KAPE Getting Started Documentation :
+- https://ericzimmerman.github.io/KapeDocs/#!Pages%5C2.-Getting-started.md
+
+Official GitHub repository for community created Targets and Modules:
+- https://github.com/EricZimmerman/KapeFiles
+
+Tips and Tricks:
+- https://ericzimmerman.github.io/KapeDocs/#!Pages%5C60-Tips-and-tricks.md
+
+Awesome KAPE:
+- https://github.com/AndrewRathbun/Awesome-KAPE
+
 
