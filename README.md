@@ -2,6 +2,7 @@
 A handy batch wrapper for KAPE presets - runs targets one-by-one and sorts output folders automatically
 
 ![](images/ProcessArrow.jpg)
+[Source of this image](https://ericzimmerman.github.io/KapeDocs/#!index.md#how-kape-works).
 
 ```sh
 C:\Users\Simon\KAPE>run-kape /banner
