@@ -62,6 +62,19 @@ kape-able/
 └─ run-kape.bat
 ```
 
+# Output
+
+The output folder specified in the command line will create for each preset (classification of which type of target), a folder with the name of the target.
+The later will have the console log of kape.exe using that target and the evidences zipped.
+```text
+<output_name>/
+├─ <preset_name>/
+│  └─ <target_name>_day_month
+│     ├─ <timestamp>_ConsoleLog.txt
+│     └─ <timestamp>_<basename>.zip
+└─  ...
+```
+
 # Target Consideration
 
 The target name starting with a '!' must be dealt with so that CMD parser does not interpret it as a variable:
