@@ -62,6 +62,17 @@ kape-able/
 └─ run-kape.bat
 ```
 
+# Configuration Files
+
+Note that configuration files are specific to whether or not it is run in parallel and this is because processes must not try to access resources used by other processes. If a single command line contains more than one targets, use sequential mode (by default). If multiple ligns contains one target per line, parallelism is allowed.
+One kape.exe process is launched per lign in the '.cli' file, if multiple targets are specified on the same lign, concurrency problems could arise.
+
+Concretely:
+- Run sequentially (by default) for configuration files made of a single lign with multiple targets.
+- Run with parallelism ('/parallel') only configuration files where each lign is one target.
+
+For instance, have a look at 'cli/windows-parallel.cli' and 'cli/windows-seq.cli'.
+
 # Output
 
 The output folder specified in the command line will create for each preset (classification of which type of target), a folder with the name of the target.
