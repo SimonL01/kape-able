@@ -34,11 +34,23 @@ $defs = @{
   'productivity_notes.cli'       = 'AceText,ClipboardMaster,Evernote,MicrosoftOneNote,MicrosoftStickyNotes,MicrosoftToDo,Fences';
 }
 
+function Normalize-NameForPath([string]$t) {
+    if ($t.StartsWith('!')) { return $t.Substring(1) }
+    return $t
+}
+
 function Quote-TargetForSingleLine([string]$t) {
   # For single-target lines:
   # - KAPE artifact tokens like $MFT should be unquoted
   # - Anything else quoted only if it contains spaces
   if ($t.StartsWith('$')) { return $t }
+  
+  # If target starts with bang, escape it for CMD
+  if ($t.StartsWith('!')) {
+      $escaped = '^!' + $t.Substring(1)
+      return $escaped
+  }
+
   if ($t -match '\s') { return '"' + $t + '"' }
   return $t
 }
@@ -91,13 +103,14 @@ foreach ($name in $defs.Keys) {
 
     # Build a tdest that includes preset + target + date
     # Example: %2antivirus\Avast_%d-%m
-    $safeT = Sanitize-ForPath $t
+    $pathName = Normalize-NameForPath($t) # strip leading '!'
+    $safeT = Sanitize-ForPath $pathName
     $tdest = '--tdest %2\' + $presetName + '\' + $safeT + '_%d-%m'
 
     $line = @(
       '--tsource %1',
       $tdest,
-      '--target ' + $tForCmd,
+      '--target' + $tForCmd,
       '--zip %3'
     ) -join ' '
 
