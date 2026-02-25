@@ -54,3 +54,11 @@ kape-able/
 ├─ kape.exe
 └─ run-kape.bat
 ```
+
+# Target Consideration
+
+The target name starting with a '!' must be dealt with so that CMD parser does not interpret it as a variable:
+```txt
+--tsource %1 --tdest %2\triage_collections\BasicCollection_%d-%m --target ^!BasicCollection --zip %3
+```
+
