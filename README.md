@@ -62,3 +62,10 @@ The target name starting with a '!' must be dealt with so that CMD parser does n
 --tsource %1 --tdest %2\triage_collections\BasicCollection_%d-%m --target ^!BasicCollection --zip %3
 ```
 
+# Reparse Point Failures
+
+KAPE is not immune to broken reparse points, but the main script and its jobs still run correctly.
+
+![](reparse-point-failure.png)
+
+
