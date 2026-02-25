@@ -1,5 +1,9 @@
 # KAPE-Able
-A handy batch wrapper for KAPE presets - runs targets one-by-one and sorts output folders automatically
+
+ This project is a handy batch wrapper for KAPE presets. It runs targets one-by-one and sorts output folders automatically.
+
+> [!CAUTION]
+> Currently tested with kape.exe version 1.3.0.2
 
 ![](images/ProcessArrow.jpg)
 [Source of this image](https://ericzimmerman.github.io/KapeDocs/#!index.md#how-kape-works).
