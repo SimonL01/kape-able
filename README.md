@@ -1,6 +1,8 @@
 # KAPE-Able
 A handy batch wrapper for KAPE presets - runs targets one-by-one and sorts output folders automatically
 
+![](images/ProcessArrow.jpg)
+
 ```sh
 C:\Users\Simon\KAPE>run-kape /banner
 ==============================================================
@@ -66,7 +68,7 @@ The target name starting with a '!' must be dealt with so that CMD parser does n
 
 KAPE is not immune to broken reparse points, but the main script and its jobs still run correctly.
 
-![](reparse-point-failure.png)
+![](images/reparse-point-failure.png)
 
 # Useful Links
 
