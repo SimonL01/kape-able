@@ -27,6 +27,7 @@ set "BGRN=%ESC%[92m"
 set "BCYN=%ESC%[96m"
 set "BMAG=%ESC%[95m"
 set "BYEL=%ESC%[93m"
+if not defined KAPE_MIN_FREE_GB set "KAPE_MIN_FREE_GB=10"
 
 REM --- Paths ---
 set "SCRIPT_DIR=%~dp0"
@@ -139,6 +140,22 @@ if /i "%~7"=="/parallel" set "PARALLEL_FLAG=/parallel"
 if /i "%~8"=="/parallel" set "PARALLEL_FLAG=/parallel"
 if /i "%~9"=="/parallel" set "PARALLEL_FLAG=/parallel"
 
+if not defined ARG1 (
+    echo [%BRED%ERROR%RST%] Missing source path.
+    call :ShowUsage
+    exit /b 6
+)
+if not defined ARG2 (
+    echo [%BRED%ERROR%RST%] Missing destination root.
+    call :ShowUsage
+    exit /b 6
+)
+if not defined ARG3 (
+    echo [%BRED%ERROR%RST%] Missing ZIP tag.
+    call :ShowUsage
+    exit /b 6
+)
+
 REM --- Normalize drive-root-ish tokens (quality-of-life) ---
 for %%V in (ARG1 ARG2 ARG3 ARG4 ARG5 ARG6 ARG7 ARG8) do (
   for /f "tokens=1,* delims==" %%K in ('set %%V 2^>nul') do (
@@ -149,8 +166,29 @@ for %%V in (ARG1 ARG2 ARG3 ARG4 ARG5 ARG6 ARG7 ARG8) do (
   )
 )
 
+for %%I in ("%ARG2%") do set "CASE_ROOT=%%~fI"
+if not exist "%CASE_ROOT%" mkdir "%CASE_ROOT%" >nul 2>&1
+set "CASE_STATUS_CSV=%CASE_ROOT%\_kape.status.csv"
+set "HASH_MANIFEST=%CASE_ROOT%\SHA256SUMS.txt"
+set "SYSTEM_CONTEXT_FILE=%CASE_ROOT%\SystemContext.txt"
+set "SUMMARY_FILE=%CASE_ROOT%\_kape.summary.txt"
+set "KAPE_CASE_ROOT=%CASE_ROOT%"
+set "KAPE_PRESET_NAME=%MATCH%"
+
+call :RequireAdmin
+if errorlevel 1 exit /b 7
+
+call :CheckFreeSpace "%CASE_ROOT%"
+if errorlevel 1 exit /b 8
+
 REM --- Compute date/time (DD, MM, YYYY, HH, MIN) ---
 call :GetNow
+
+call :CaptureSystemContext
+if errorlevel 1 (
+    echo [%BRED%ERROR%RST%] Failed to capture system context in "%SYSTEM_CONTEXT_FILE%".
+    exit /b 9
+)
 
 REM --- Materialize the template into TARGET (tokens resolved) ---
 if exist "%TARGET%" del "%TARGET%" >nul 2>&1
@@ -202,7 +240,7 @@ if not exist "%KAPE_EXE%" (
 )
 
 REM --- Per-run temp job directory (unique so stale files never mix) ---
-set "JOBSDIR=%TEMP%\kape_run_%RANDOM%%RANDOM%"
+set "JOBSDIR=%CASE_ROOT%\_kape_jobs\%YYYY%%MM%%DD%_%HH%%MIN%"
 mkdir "%JOBSDIR%" >nul 2>&1
 
 REM --- Prepare status CSV and run per target ---
@@ -225,11 +263,20 @@ REM If parallel, wait for all children and then print statuses
 if /i "%PARALLEL_FLAG%"=="/parallel" (
     call :WaitForAll
     call :RetryVss
-    rd /s /q "%JOBSDIR%" >nul 2>&1
 )
+
+call :FinalizeCaseOutput
+if errorlevel 1 exit /b 10
 
 echo(
 echo [%BYEL%INFO%RST%] Completed processing of "%MATCH%".
+echo [%BYEL%INFO%RST%] Status CSV: "%CASE_STATUS_CSV%"
+echo [%BYEL%INFO%RST%] SHA256 manifest: "%HASH_MANIFEST%"
+echo [%BYEL%INFO%RST%] System context: "%SYSTEM_CONTEXT_FILE%"
+echo [%BYEL%INFO%RST%] Summary file: "%SUMMARY_FILE%"
+if defined SUM_TOTAL (
+  echo [%BYEL%INFO%RST%] Final summary: total=!SUM_TOTAL! ok=!SUM_OK! warn=!SUM_WARN! fail=!SUM_FAIL!
+)
 exit /b 0
 
 
@@ -341,13 +388,16 @@ if not exist "!DEST!" mkdir "!DEST!" >nul 2>&1
 
 call :GetNow
 set "STAMP=!YYYY!!MM!!DD!_!HH!!MIN!"
-set "LOG_ONE=!JOBSDIR!\%TGT%_L%IDX%_!STAMP!.log"
-set "RCFILE=!JOBSDIR!\%TGT%_L%IDX%_!STAMP!.rc"
-set "DESTFILE=!JOBSDIR!\%TGT%_L%IDX%_!STAMP!.dest"
-set "JOBFILE=!JOBSDIR!\%TGT%_L%IDX%_!STAMP!.cmd"
+set "FILE_STEM=L!IDX!_!STAMP!_!RANDOM!"
+set "LOG_ONE=!JOBSDIR!\!FILE_STEM!.log"
+set "RCFILE=!JOBSDIR!\!FILE_STEM!.rc"
+set "DESTFILE=!JOBSDIR!\!FILE_STEM!.dest"
+set "JOBFILE=!JOBSDIR!\!FILE_STEM!.cmd"
+set "TGTFILE=!JOBSDIR!\!FILE_STEM!.tgt"
 echo(!DEST!>"!DESTFILE!"
-echo(!CMD_LINE!>"!JOBSDIR!\%TGT%_L%IDX%_!STAMP!.args"
-echo %TIME%>"!JOBSDIR!\%TGT%_L%IDX%_!STAMP!.start"
+echo(!CMD_LINE!>"!JOBSDIR!\!FILE_STEM!.args"
+echo %TIME%>"!JOBSDIR!\!FILE_STEM!.start"
+echo(!TGT!>"!TGTFILE!"
 >  "!JOBFILE!" echo @echo off
 >> "!JOBFILE!" echo setlocal EnableExtensions DisableDelayedExpansion
 >> "!JOBFILE!" echo cd /d "%SCRIPT_DIR%"
@@ -376,7 +426,9 @@ if not defined RC set "RC=1"
 call :AssessOne "!LOG_ONE!" "!DEST!" ZIPFOUND ZIPFILE OKLOG
 >> "%STATUS_CSV%" echo !TGT!,!IDX!,!RC!,!OKLOG!,!ZIPFOUND!,"!LOG_ONE!","!ZIPFILE!"
 
-if "!RC!"=="0" (
+if /i "!OKLOG!"=="true" if "!ZIPFOUND!"=="true" (
+  echo [ %ESC%[92mOK%ESC%[0m ] !TGT! RC=!RC! zip=!ZIPFOUND!
+) else if "!RC!"=="0" (
   if /i "!OKLOG!"=="true" (
     echo [ %ESC%[92mOK%ESC%[0m ] !TGT! RC=!RC! zip=!ZIPFOUND!
   ) else (
@@ -423,17 +475,15 @@ if "%RCC%"=="0" endlocal & exit /b 0
 
 REM Check if the log mentions a file-lock error
 set "STEM=%RCPATH:~0,-3%"
-set "LOGF=%STEM%log"
+set "LOGF=%STEM%.log"
 findstr /i /c:"IOException" /c:"WinIOError" /c:"being used by another process" "%LOGF%" >nul 2>&1
 if errorlevel 1 endlocal & exit /b 0
 
 REM Read original KAPE arguments (strip trailing CR from echo/CRLF)
-set "ARGSF=%STEM%args"
+set "ARGSF=%STEM%.args"
 if not exist "%ARGSF%" endlocal & exit /b 0
 set "ORIG_ARGS="
 for /f "usebackq delims=" %%A in ("%ARGSF%") do if not defined ORIG_ARGS set "ORIG_ARGS=%%A"
-if not defined ORIG_ARGS endlocal & exit /b 0
-set "ORIG_ARGS=%ORIG_ARGS:~0,-1%"
 if not defined ORIG_ARGS endlocal & exit /b 0
 
 REM Append --vss if not already present
@@ -451,26 +501,31 @@ for %%I in ("%RDEST%") do set "RDEST=%%~fI"
 
 set /a RETRY_COUNT+=1
 set "RLOG=%JOBSDIR%\%NM%_retry.log"
+set "RETRY_TGT=%NM%"
+if exist "%STEM%.tgt" (
+    set "RETRY_TGT="
+    for /f "usebackq delims=" %%A in ("%STEM%.tgt") do if not defined RETRY_TGT set "RETRY_TGT=%%A"
+)
 
 for /f "delims=" %%e in ('echo prompt $E^|cmd') do set "ESC=%%e"
 
 echo(
-echo [%BYEL%RETRY%RST%] %NM% -- file-lock error detected, retrying with --vss ...
+echo [%BYEL%RETRY%RST%] !RETRY_TGT! -- file-lock error detected, retrying with --vss ...
 "%KAPE_EXE%" %NEW_ARGS% 0<nul 1>"%RLOG%" 2>&1
 set "RRC2=%ERRORLEVEL%"
 
 call :AssessOne "%RLOG%" "%RDEST%" RZIPFOUND RZIPFILE ROKLOG
->> "%STATUS_CSV%" echo %NM%_retry,0,%RRC2%,%ROKLOG%,%RZIPFOUND%,"%RLOG%","%RZIPFILE%"
+>> "%STATUS_CSV%" echo !RETRY_TGT!_retry,0,%RRC2%,%ROKLOG%,%RZIPFOUND%,"%RLOG%","%RZIPFILE%"
 
 if "%RRC2%"=="0" (
     if /i "%ROKLOG%"=="true" (
-        echo [ %ESC%[92mOK%ESC%[0m ] %NM% (VSS retry) RC=%RRC2% zip=%RZIPFOUND%
+        echo [ %ESC%[92mOK%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% zip=%RZIPFOUND%
     ) else (
-        echo [ %ESC%[93mWARN%ESC%[0m ] %NM% (VSS retry) RC=%RRC2% logOK=%ROKLOG%
+        echo [ %ESC%[93mWARN%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% logOK=%ROKLOG%
         echo        See "%RLOG%"
     )
 ) else (
-    echo [ %ESC%[91mFAIL%ESC%[0m ] %NM% (VSS retry) RC=%RRC2%
+    echo [ %ESC%[91mFAIL%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2%
     echo        See "%RLOG%"
 )
 endlocal & set "RETRY_COUNT=%RETRY_COUNT%" & exit /b 0
@@ -500,8 +555,12 @@ for %%R in ("%JOBSDIR%\*.rc") do (
         set "DESTONE="
         for /f "usebackq delims=" %%d in ("%%~dpnR.dest") do if not defined DESTONE set "DESTONE=%%d"
         if not defined DESTONE set "DESTONE=%JOBSDIR%"
-        set "TGTN=%%~nR"
-        for /f "tokens=1 delims=_" %%x in ("!TGTN!") do set "TGTNAME=%%x"
+        set "TGTNAME=%%~nR"
+        set "TGTNAME_FROM_FILE="
+        if exist "%%~dpnR.tgt" (
+            for /f "usebackq delims=" %%n in ("%%~dpnR.tgt") do if not defined TGTNAME_FROM_FILE set "TGTNAME_FROM_FILE=%%n"
+        )
+        if defined TGTNAME_FROM_FILE set "TGTNAME=!TGTNAME_FROM_FILE!"
         REM Compute elapsed time from .start file
         set "ELAPSED_STR="
         set "T0="
@@ -610,6 +669,8 @@ echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG            ^> %BYEL%Name of CLI. Runs ea
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /parallel  ^> %BYEL%Same, but run targets in parallel%RST%
 echo %BCYN%Examples:%RST%
 echo   %~nx0 test "C:" ".\out" "CASE-SLO"
+echo   %~nx0 workstation "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
+echo   %~nx0 server "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
 echo   %~nx0 test "C:" ".\out" "CASE-SLO" /parallel
 echo(
 exit /b 0
@@ -709,3 +770,108 @@ echo(
 
 echo %CYN%==============================================================%RST%
 exit /b 0
+
+:FinalizeCaseOutput
+setlocal EnableDelayedExpansion
+if not defined CASE_ROOT endlocal & exit /b 0
+
+if /i not "%STATUS_CSV%"=="%CASE_STATUS_CSV%" (
+    copy /y "%STATUS_CSV%" "%CASE_STATUS_CSV%" >nul 2>&1
+    if errorlevel 1 (
+        echo [%BRED%ERROR%RST%] Failed to copy status CSV to "%CASE_STATUS_CSV%".
+        endlocal & exit /b 1
+    )
+)
+
+call :WriteHashManifest
+if errorlevel 1 (
+    echo [%BRED%ERROR%RST%] Failed to write SHA256 manifest "%HASH_MANIFEST%".
+    endlocal & exit /b 1
+)
+
+call :WriteFinalSummary
+if errorlevel 1 (
+    echo [%BRED%ERROR%RST%] Failed to write final summary "%SUMMARY_FILE%".
+    endlocal & exit /b 1
+)
+
+endlocal & exit /b 0
+
+:WriteHashManifest
+setlocal
+set "KAPE_HASH_MANIFEST=%HASH_MANIFEST%"
+powershell -NoProfile -Command ^
+  "$root = $env:KAPE_CASE_ROOT; $out = $env:KAPE_HASH_MANIFEST; $files = Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.zip -ErrorAction SilentlyContinue; if (@($files).Count -eq 0) { 'No ZIP files found under ' + $root | Set-Content -LiteralPath $out -Encoding ascii; exit 0 }; $lines = foreach ($f in $files) { $hash = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash; '{0} *{1}' -f $hash, $f.FullName }; Set-Content -LiteralPath $out -Value $lines -Encoding ascii"
+set "PS_RC=%ERRORLEVEL%"
+endlocal & exit /b %PS_RC%
+
+:WriteFinalSummary
+setlocal
+set "KAPE_STATUS_FILE=%CASE_STATUS_CSV%"
+set "KAPE_SUMMARY_FILE=%SUMMARY_FILE%"
+for /f "usebackq tokens=1,2 delims==" %%A in (`powershell -NoProfile -Command ^
+  "$rows = Import-Csv -LiteralPath $env:KAPE_STATUS_FILE; $results = @{}; foreach ($row in $rows) { $name = $row.target; $isRetry = $false; if ($name -like '*_retry') { $name = $name.Substring(0, $name.Length - 6); $isRetry = $true }; $status = if ((($row.log_ok -eq 'true') -and ($row.zip_found -eq 'true')) -or (($row.rc -eq '0') -and ($row.log_ok -eq 'true'))) { 'OK' } elseif ($row.rc -eq '0') { 'WARN' } else { 'FAIL' }; if ($isRetry -or -not $results.ContainsKey($name)) { $results[$name] = $status } }; $ok = @($results.Values | Where-Object { $_ -eq 'OK' }).Count; $warn = @($results.Values | Where-Object { $_ -eq 'WARN' }).Count; $fail = @($results.Values | Where-Object { $_ -eq 'FAIL' }).Count; $total = $results.Count; $content = @('Preset=' + $env:KAPE_PRESET_NAME, 'CaseRoot=' + $env:KAPE_CASE_ROOT, 'Total=' + $total, 'OK=' + $ok, 'WARN=' + $warn, 'FAIL=' + $fail); Set-Content -LiteralPath $env:KAPE_SUMMARY_FILE -Value $content -Encoding ascii; 'SUM_TOTAL=' + $total; 'SUM_OK=' + $ok; 'SUM_WARN=' + $warn; 'SUM_FAIL=' + $fail"`) do set "%%A=%%B"
+set "PS_RC=%ERRORLEVEL%"
+endlocal & (
+  set "SUM_TOTAL=%SUM_TOTAL%"
+  set "SUM_OK=%SUM_OK%"
+  set "SUM_WARN=%SUM_WARN%"
+  set "SUM_FAIL=%SUM_FAIL%"
+  exit /b %PS_RC%
+)
+
+:RequireAdmin
+fltmc >nul 2>&1
+if errorlevel 1 (
+    echo [%BRED%ERROR%RST%] Administrative privileges are required. Re-run this shell as Administrator.
+    exit /b 1
+)
+echo [%BYEL%INFO%RST%] Administrative privilege check passed.
+exit /b 0
+
+:CheckFreeSpace
+setlocal EnableDelayedExpansion
+set "KAPE_FREE_PATH=%~1"
+set "FREE_GB="
+for /f "usebackq tokens=1,2 delims==" %%A in (`powershell -NoProfile -Command ^
+  "$min = [double]$env:KAPE_MIN_FREE_GB; $path = $env:KAPE_FREE_PATH; $drive = (Get-Item -LiteralPath $path).PSDrive; if (-not $drive) { exit 3 }; $free = [math]::Round($drive.Free / 1GB, 2); 'FREE_GB=' + $free; if ($drive.Free -lt ($min * 1GB)) { exit 2 }"`) do set "%%A=%%B"
+set "PS_RC=!ERRORLEVEL!"
+if "%PS_RC%"=="2" (
+    echo [%BRED%ERROR%RST%] Destination "%~1" has !FREE_GB! GB free. Minimum required is %KAPE_MIN_FREE_GB% GB.
+    endlocal & exit /b 1
+)
+if not "%PS_RC%"=="0" (
+    echo [%BRED%ERROR%RST%] Failed to determine free space for "%~1".
+    endlocal & exit /b 1
+)
+echo [%BYEL%INFO%RST%] Destination free space: !FREE_GB! GB ^(minimum %KAPE_MIN_FREE_GB% GB^).
+endlocal & exit /b 0
+
+:CaptureSystemContext
+setlocal
+(
+  echo Timestamp: %DATE% %TIME%
+  echo Preset: %MATCH%
+  echo Source: %ARG1%
+  echo DestinationRoot: %CASE_ROOT%
+  echo ZipTag: %ARG3%
+  echo.
+  echo ===== hostname =====
+  hostname
+  echo.
+  echo ===== whoami =====
+  whoami
+  echo.
+  echo ===== ipconfig /all =====
+  ipconfig /all
+  echo.
+  echo ===== wmic os get caption,version,buildnumber =====
+  where wmic >nul 2>&1
+  if errorlevel 1 (
+    echo wmic is not available on this system.
+  ) else (
+    wmic os get caption^,version^,buildnumber /value
+  )
+) > "%SYSTEM_CONTEXT_FILE%" 2>&1
+set "CTX_RC=%ERRORLEVEL%"
+endlocal & exit /b %CTX_RC%
