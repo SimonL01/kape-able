@@ -1,0 +1,2 @@
+--tsource %1 --tdest %2\triage_collections\ServerTriage_%d-%m --target ServerTriage --zip %3
+--tsource %1 --tdest %2\triage_collections\ServerTriage_%d-%m --target "CombinedLogs,WebServers,RemoteAdmin,OpenSSHClient,OpenSSHServer,WindowsFirewall,GroupPolicy,WindowsDefender,PowerShellConsole" --zip %3
