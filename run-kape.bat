@@ -28,6 +28,7 @@ set "BCYN=%ESC%[96m"
 set "BMAG=%ESC%[95m"
 set "BYEL=%ESC%[93m"
 if not defined KAPE_MIN_FREE_GB set "KAPE_MIN_FREE_GB=20"
+if not defined KAPE_MAX_PARALLEL set "KAPE_MAX_PARALLEL=4"
 
 REM --- Paths ---
 set "SCRIPT_DIR=%~dp0"
@@ -122,6 +123,7 @@ if not defined MATCH (
 :FoundMatch
 echo(
 echo [%BYEL%INFO%RST%] Using CLI preset: "%MATCH%"
+call :MakeSafeName "%MATCH%" KAPE_PRESET_SAFE
 
 REM --- Capture extra arguments for template tokens %1..%9 ---
 REM     %~2 becomes ARG1 (template %1), %~3 -> ARG2 (template %2), etc.
@@ -179,7 +181,10 @@ if not defined ARG3 if not defined NOZIP_FLAG (
     exit /b 6
 )
 if defined NOZIP_FLAG (
+    set "KAPE_EXPECT_ZIP=0"
     echo [%BYEL%INFO%RST%] Raw collection mode enabled. Any --zip option from the preset will be ignored.
+) else (
+    set "KAPE_EXPECT_ZIP=1"
 )
 
 REM --- Normalize drive-root-ish tokens (quality-of-life) ---
@@ -200,6 +205,11 @@ set "SYSTEM_CONTEXT_FILE=%CASE_ROOT%\SystemContext.txt"
 set "SUMMARY_FILE=%CASE_ROOT%\_kape.summary.txt"
 set "KAPE_CASE_ROOT=%CASE_ROOT%"
 set "KAPE_PRESET_NAME=%MATCH%"
+
+call :NormalizeParallelLimit
+if /i "%PARALLEL_FLAG%"=="/parallel" (
+  echo [%BYEL%INFO%RST%] Parallel collection enabled. Max concurrent jobs: %KAPE_MAX_PARALLEL%
+)
 
 call :RequireAdmin
 if errorlevel 1 exit /b 7
@@ -266,7 +276,7 @@ if not exist "%KAPE_EXE%" (
 )
 
 REM --- Per-run temp job directory (unique so stale files never mix) ---
-set "JOBSDIR=%CASE_ROOT%\_kape_jobs\%YYYY%%MM%%DD%_%HH%%MIN%"
+set "JOBSDIR=%CASE_ROOT%\_kape_jobs\%KAPE_PRESET_SAFE%_%YYYY%%MM%%DD%_%HH%%MIN%_%RANDOM%"
 mkdir "%JOBSDIR%" >nul 2>&1
 
 REM --- Prepare status CSV and run per target ---
@@ -416,7 +426,9 @@ if not exist "!DEST!" mkdir "!DEST!" >nul 2>&1
 
 call :GetNow
 set "STAMP=!YYYY!!MM!!DD!_!HH!!MIN!"
-set "FILE_STEM=L!IDX!_!STAMP!_!RANDOM!"
+call :MakeSafeName "!TGT!" SAFE_TGT
+if not defined SAFE_TGT set "SAFE_TGT=NO_TARGET"
+set "FILE_STEM=!KAPE_PRESET_SAFE!_L!IDX!_!SAFE_TGT!_!STAMP!_!RANDOM!"
 set "LOG_ONE=!JOBSDIR!\!FILE_STEM!.log"
 set "RCFILE=!JOBSDIR!\!FILE_STEM!.rc"
 set "DESTFILE=!JOBSDIR!\!FILE_STEM!.dest"
@@ -433,13 +445,13 @@ echo(!TGT!>"!TGTFILE!"
 >> "!JOBFILE!" echo (echo %%errorlevel%%)^> "!RCFILE!"
 
 if /i "!DO_PAR!"=="/parallel" (
-  REM Throttle: wait until fewer than 8 jobs are running
+  REM Throttle: wait until fewer than KAPE_MAX_PARALLEL jobs are running
   :throttle
   set "RUNNING=0"
   for %%J in ("!JOBSDIR!\*.cmd") do (
     if not exist "!JOBSDIR!\%%~nJ.rc" set /a RUNNING+=1
   )
-  if !RUNNING! geq 8 (
+  if !RUNNING! geq %KAPE_MAX_PARALLEL% (
     timeout /t 1 /nobreak >nul 2>nul
     goto :throttle
   )
@@ -451,18 +463,16 @@ call "!JOBFILE!"
 set /p RC=<"!RCFILE!" 2>nul
 if not defined RC set "RC=1"
 
+call :RenameDestinationLogs "!DEST!" "!TGT!" ""
 call :AssessOne "!LOG_ONE!" "!DEST!" ZIPFOUND ZIPFILE OKLOG
 >> "%STATUS_CSV%" echo !TGT!,!IDX!,!RC!,!OKLOG!,!ZIPFOUND!,"!LOG_ONE!","!ZIPFILE!"
+call :DetermineOutcome "!RC!" "!OKLOG!" "!ZIPFOUND!" RESULT
 
-if /i "!OKLOG!"=="true" if "!ZIPFOUND!"=="true" (
+if /i "!RESULT!"=="OK" (
   echo [ %ESC%[92mOK%ESC%[0m ] !TGT! RC=!RC! zip=!ZIPFOUND!
-) else if "!RC!"=="0" (
-  if /i "!OKLOG!"=="true" (
-    echo [ %ESC%[92mOK%ESC%[0m ] !TGT! RC=!RC! zip=!ZIPFOUND!
-  ) else (
-    echo [ %ESC%[93mWARN%ESC%[0m ] !TGT! RC=!RC! logOK=!OKLOG! zip=!ZIPFOUND!
-    echo        See "!LOG_ONE!"
-  )
+) else if /i "!RESULT!"=="WARN" (
+  echo [ %ESC%[93mWARN%ESC%[0m ] !TGT! RC=!RC! logOK=!OKLOG! zip=!ZIPFOUND!
+  echo        See "!LOG_ONE!"
 ) else (
   echo [ %ESC%[91mFAIL%ESC%[0m ] !TGT! RC=!RC! logOK=!OKLOG! zip=!ZIPFOUND!
   echo        See "!LOG_ONE!"
@@ -542,18 +552,18 @@ echo [%BYEL%RETRY%RST%] !RETRY_TGT! -- file-lock error detected, retrying with -
 "%KAPE_EXE%" %NEW_ARGS% 0<nul 1>"%RLOG%" 2>&1
 set "RRC2=%ERRORLEVEL%"
 
+call :RenameDestinationLogs "%RDEST%" "!RETRY_TGT!" "retry"
 call :AssessOne "%RLOG%" "%RDEST%" RZIPFOUND RZIPFILE ROKLOG
 >> "%STATUS_CSV%" echo !RETRY_TGT!_retry,0,%RRC2%,%ROKLOG%,%RZIPFOUND%,"%RLOG%","%RZIPFILE%"
+call :DetermineOutcome "%RRC2%" "%ROKLOG%" "%RZIPFOUND%" RETRY_RESULT
 
-if "%RRC2%"=="0" (
-    if /i "%ROKLOG%"=="true" (
-        echo [ %ESC%[92mOK%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% zip=%RZIPFOUND%
-    ) else (
-        echo [ %ESC%[93mWARN%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% logOK=%ROKLOG%
-        echo        See "%RLOG%"
-    )
+if /i "%RETRY_RESULT%"=="OK" (
+    echo [ %ESC%[92mOK%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% zip=%RZIPFOUND%
+) else if /i "%RETRY_RESULT%"=="WARN" (
+    echo [ %ESC%[93mWARN%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% logOK=%ROKLOG% zip=%RZIPFOUND%
+    echo        See "%RLOG%"
 ) else (
-    echo [ %ESC%[91mFAIL%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2%
+    echo [ %ESC%[91mFAIL%ESC%[0m ] !RETRY_TGT! (VSS retry) RC=%RRC2% logOK=%ROKLOG% zip=%RZIPFOUND%
     echo        See "%RLOG%"
 )
 endlocal & set "RETRY_COUNT=%RETRY_COUNT%" & exit /b 0
@@ -613,31 +623,24 @@ for %%R in ("%JOBSDIR%\*.rc") do (
         
         if not defined ELAPSED_STR set "ELAPSED_STR="
         
+        call :RenameDestinationLogs "!DESTONE!" "!TGTNAME!" ""
         call :AssessOne "!LOGONE!" "!DESTONE!" ZIPFOUND ZIPFILE OKLOG
         >> "%STATUS_CSV%" echo !TGTNAME!,0,!RCC!,!OKLOG!,!ZIPFOUND!,"!LOGONE!","!ZIPFILE!"
+        call :DetermineOutcome "!RCC!" "!OKLOG!" "!ZIPFOUND!" RESULT
         
-        REM If logs are OK and zip was created, treat as success even if RCC is non-zero
-        if /i "!OKLOG!"=="true" if "!ZIPFOUND!"=="true" (
+        if /i "!RESULT!"=="OK" (
             if defined ELAPSED_STR if not "!ELAPSED_STR!"=="" (
                 echo [ %ESC%[92mOK%ESC%[0m ] !TGTNAME! RC=!RCC! zip=!ZIPFOUND! time=!ELAPSED_STR!
             ) else (
                 echo [ %ESC%[92mOK%ESC%[0m ] !TGTNAME! RC=!RCC! zip=!ZIPFOUND!
             )
-        ) else if "!RCC!"=="0" (
-            if /i "!OKLOG!"=="true" (
-                if defined ELAPSED_STR if not "!ELAPSED_STR!"=="" (
-                    echo [ %ESC%[92mOK%ESC%[0m ] !TGTNAME! RC=!RCC! zip=!ZIPFOUND! time=!ELAPSED_STR!
-                ) else (
-                    echo [ %ESC%[92mOK%ESC%[0m ] !TGTNAME! RC=!RCC! zip=!ZIPFOUND!
-                )
+        ) else if /i "!RESULT!"=="WARN" (
+            if defined ELAPSED_STR if not "!ELAPSED_STR!"=="" (
+                echo [ %ESC%[93mWARN%ESC%[0m ] !TGTNAME! RC=!RCC! logOK=!OKLOG! zip=!ZIPFOUND! time=!ELAPSED_STR!
             ) else (
-                if defined ELAPSED_STR if not "!ELAPSED_STR!"=="" (
-                    echo [ %ESC%[93mWARN%ESC%[0m ] !TGTNAME! RC=!RCC! logOK=!OKLOG! zip=!ZIPFOUND! time=!ELAPSED_STR!
-                ) else (
-                    echo [ %ESC%[93mWARN%ESC%[0m ] !TGTNAME! RC=!RCC! logOK=!OKLOG! zip=!ZIPFOUND!
-                )
-                echo        See "!LOGONE!"
+                echo [ %ESC%[93mWARN%ESC%[0m ] !TGTNAME! RC=!RCC! logOK=!OKLOG! zip=!ZIPFOUND!
             )
+            echo        See "!LOGONE!"
         ) else (
             if defined ELAPSED_STR if not "!ELAPSED_STR!"=="" (
                 echo [ %ESC%[91mFAIL%ESC%[0m ] !TGTNAME! RC=!RCC! logOK=!OKLOG! zip=!ZIPFOUND! time=!ELAPSED_STR!
@@ -665,9 +668,7 @@ set "OKLOG=false"
 set "ZIP="
 findstr /c:"Total execution time:" "%LOGF%" >nul 2>&1 && set "OKLOG=true"
 if /i "!OKLOG!"=="false" (
-  for /f "tokens=1,* delims=:" %%x in ('findstr /c:"Copied " "%LOGF%" 2^>nul') do (
-    echo %%y | findstr /c:" out of " >nul && set "OKLOG=true"
-  )
+  findstr /r /c:"Copied .* out of " "%LOGF%" >nul 2>&1 && set "OKLOG=true"
 )
 REM Look for zip anywhere below DESTROOT (line-specific --tdest child folder)
 for /r "%DESTROOT%" %%Z in (*.zip) do (
@@ -681,6 +682,93 @@ endlocal & (
   set "%~5=%OKLOG%"
 )
 exit /b 0
+
+:RenameDestinationLogs
+REM %~1=DEST folder  %~2=target name  %~3=optional suffix tag (e.g. retry)
+setlocal EnableDelayedExpansion
+set "DEST=%~1"
+if not defined DEST endlocal & exit /b 0
+if not exist "%DEST%" endlocal & exit /b 0
+call :MakeSafeName "%~2" SAFE_TGT
+if not defined SAFE_TGT set "SAFE_TGT=target"
+set "PREFIX=!SAFE_TGT!"
+if not "%~3"=="" set "PREFIX=!PREFIX!_%~3"
+call :PrefixMatchingFiles "%DEST%" "*ConsoleLog*.*" "!PREFIX!"
+call :PrefixMatchingFiles "%DEST%" "*CopyLog*.*" "!PREFIX!"
+call :PrefixMatchingFiles "%DEST%" "*SkipLog*.*" "!PREFIX!"
+endlocal & exit /b 0
+
+:PrefixMatchingFiles
+REM %~1=folder  %~2=wildcard pattern  %~3=prefix
+setlocal EnableDelayedExpansion
+set "DEST=%~1"
+set "PATTERN=%~2"
+set "PREFIX=%~3"
+for /f "delims=" %%F in ('dir /b /a:-d "%DEST%\%PATTERN%" 2^>nul') do (
+  echo(%%F| findstr /b /i /c:"!PREFIX!_" >nul
+  if errorlevel 1 (
+    call :PrefixOneFile "%DEST%\%%F" "!PREFIX!"
+  )
+)
+endlocal & exit /b 0
+
+:PrefixOneFile
+REM %~1=full path to file  %~2=prefix to prepend
+setlocal
+set "FULL=%~1"
+set "DIR=%~dp1"
+set "OLD=%~nx1"
+set "PREFIX=%~2"
+set "NEW=%PREFIX%_%OLD%"
+if /i "%OLD%"=="%NEW%" endlocal & exit /b 0
+call :GetUniqueFileName "%DIR%" "%NEW%" UNIQUE_NAME
+if /i not "%OLD%"=="%UNIQUE_NAME%" ren "%FULL%" "%UNIQUE_NAME%" >nul 2>&1
+endlocal & exit /b 0
+
+:GetUniqueFileName
+REM %~1=directory  %~2=preferred filename  out: %~3=available filename
+setlocal EnableDelayedExpansion
+set "DIR=%~1"
+set "NAME=%~2"
+if not exist "%DIR%%NAME%" (
+  endlocal & set "%~3=%~2" & exit /b 0
+)
+for %%I in ("%NAME%") do (
+  set "BASE=%%~nI"
+  set "EXT=%%~xI"
+)
+set /a N=1
+:gufn_loop
+set "CANDIDATE=!BASE!_!N!!EXT!"
+if exist "%DIR%!CANDIDATE!" (
+  set /a N+=1
+  goto :gufn_loop
+)
+endlocal & set "%~3=%CANDIDATE%" & exit /b 0
+
+:DetermineOutcome
+REM %~1=RC  %~2=OKLOG  %~3=ZIPFOUND  out: %~4=OK/WARN/FAIL
+setlocal
+set "RC=%~1"
+set "OKLOG=%~2"
+set "ZIPFOUND=%~3"
+set "RESULT=FAIL"
+if defined NOZIP_FLAG (
+  if "%RC%"=="0" (
+    if /i "%OKLOG%"=="true" (
+      set "RESULT=OK"
+    ) else (
+      set "RESULT=WARN"
+    )
+  )
+) else (
+  if /i "%OKLOG%"=="true" if /i "%ZIPFOUND%"=="true" (
+    set "RESULT=OK"
+  ) else if "%RC%"=="0" (
+    set "RESULT=WARN"
+  )
+)
+endlocal & set "%~4=%RESULT%" & exit /b 0
 
 
 REM ======================================================================
@@ -697,6 +785,7 @@ echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG            ^> %BYEL%Name of CLI. Runs ea
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /parallel  ^> %BYEL%Same, but run targets in parallel%RST%
 echo   %~nx0 NAME SRC DEST_ROOT /nozip             ^> %BYEL%Collect raw files only. Ignores any --zip in the preset%RST%
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /nozip     ^> %BYEL%Same as above, but keeps the usual argument shape%RST%
+echo   set KAPE_MAX_PARALLEL=4                     ^> %BYEL%Optional: cap /parallel concurrency ^(default 4^)%RST%
 echo %BCYN%Examples:%RST%
 echo   %~nx0 test "C:" ".\out" "CASE-SLO"
 echo   %~nx0 workstation "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
@@ -851,7 +940,7 @@ setlocal
 set "KAPE_STATUS_FILE=%CASE_STATUS_CSV%"
 set "KAPE_SUMMARY_FILE=%SUMMARY_FILE%"
 for /f "usebackq tokens=1,2 delims==" %%A in (`powershell -NoProfile -Command ^
-  "$rows = Import-Csv -LiteralPath $env:KAPE_STATUS_FILE; $results = @{}; foreach ($row in $rows) { $name = $row.target; $isRetry = $false; if ($name -like '*_retry') { $name = $name.Substring(0, $name.Length - 6); $isRetry = $true }; $status = if ((($row.log_ok -eq 'true') -and ($row.zip_found -eq 'true')) -or (($row.rc -eq '0') -and ($row.log_ok -eq 'true'))) { 'OK' } elseif ($row.rc -eq '0') { 'WARN' } else { 'FAIL' }; if ($isRetry -or -not $results.ContainsKey($name)) { $results[$name] = $status } }; $ok = @($results.Values | Where-Object { $_ -eq 'OK' }).Count; $warn = @($results.Values | Where-Object { $_ -eq 'WARN' }).Count; $fail = @($results.Values | Where-Object { $_ -eq 'FAIL' }).Count; $total = $results.Count; $content = @('Preset=' + $env:KAPE_PRESET_NAME, 'CaseRoot=' + $env:KAPE_CASE_ROOT, 'Total=' + $total, 'OK=' + $ok, 'WARN=' + $warn, 'FAIL=' + $fail); Set-Content -LiteralPath $env:KAPE_SUMMARY_FILE -Value $content -Encoding ascii; 'SUM_TOTAL=' + $total; 'SUM_OK=' + $ok; 'SUM_WARN=' + $warn; 'SUM_FAIL=' + $fail"`) do set "%%A=%%B"
+  "$zipExpected = $env:KAPE_EXPECT_ZIP -eq '1'; $rows = Import-Csv -LiteralPath $env:KAPE_STATUS_FILE; $results = @{}; foreach ($row in $rows) { $name = $row.target; $isRetry = $false; if ($name -like '*_retry') { $name = $name.Substring(0, $name.Length - 6); $isRetry = $true }; if ($zipExpected) { $status = if (($row.log_ok -eq 'true') -and ($row.zip_found -eq 'true')) { 'OK' } elseif ($row.rc -eq '0') { 'WARN' } else { 'FAIL' } } else { $status = if (($row.rc -eq '0') -and ($row.log_ok -eq 'true')) { 'OK' } elseif ($row.rc -eq '0') { 'WARN' } else { 'FAIL' } }; if ($isRetry -or -not $results.ContainsKey($name)) { $results[$name] = $status } }; $ok = @($results.Values | Where-Object { $_ -eq 'OK' }).Count; $warn = @($results.Values | Where-Object { $_ -eq 'WARN' }).Count; $fail = @($results.Values | Where-Object { $_ -eq 'FAIL' }).Count; $total = $results.Count; $content = @('Preset=' + $env:KAPE_PRESET_NAME, 'CaseRoot=' + $env:KAPE_CASE_ROOT, 'Total=' + $total, 'OK=' + $ok, 'WARN=' + $warn, 'FAIL=' + $fail); Set-Content -LiteralPath $env:KAPE_SUMMARY_FILE -Value $content -Encoding ascii; 'SUM_TOTAL=' + $total; 'SUM_OK=' + $ok; 'SUM_WARN=' + $warn; 'SUM_FAIL=' + $fail"`) do set "%%A=%%B"
 set "PS_RC=%ERRORLEVEL%"
 endlocal & (
   set "SUM_TOTAL=%SUM_TOTAL%"
@@ -896,6 +985,9 @@ setlocal
   echo Source: %ARG1%
   echo DestinationRoot: %CASE_ROOT%
   echo ZipTag: %ARG3%
+  echo ParallelMode: %PARALLEL_FLAG%
+  echo MaxParallel: %KAPE_MAX_PARALLEL%
+  echo ZipExpected: %KAPE_EXPECT_ZIP%
   echo.
   echo ===== hostname =====
   hostname
@@ -909,3 +1001,30 @@ setlocal
 ) > "%SYSTEM_CONTEXT_FILE%" 2>&1
 set "CTX_RC=%ERRORLEVEL%"
 endlocal & exit /b %CTX_RC%
+
+:NormalizeParallelLimit
+setlocal
+set "RAW=%KAPE_MAX_PARALLEL%"
+if not defined RAW set "RAW=4"
+set "BAD="
+for /f "delims=0123456789" %%A in ("%RAW%") do set "BAD=%%A"
+if defined BAD set "RAW=4"
+if "%RAW%"=="0" set "RAW=4"
+endlocal & set "KAPE_MAX_PARALLEL=%RAW%" & exit /b 0
+
+:MakeSafeName
+setlocal EnableDelayedExpansion
+set "VALUE=%~1"
+if not defined VALUE set "VALUE=item"
+set "VALUE=!VALUE:.cli=!"
+set "VALUE=!VALUE: =_!"
+set "VALUE=!VALUE:,=_!"
+set "VALUE=!VALUE:/=_!"
+set "VALUE=!VALUE:\=_!"
+set "VALUE=!VALUE::=_!"
+set "VALUE=!VALUE:;=_!"
+set "VALUE=!VALUE:(=_!"
+set "VALUE=!VALUE:)=_!"
+set "VALUE=!VALUE:[=_!"
+set "VALUE=!VALUE:]=_!"
+endlocal & set "%~2=%VALUE%" & exit /b 0
