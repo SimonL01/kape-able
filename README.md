@@ -106,6 +106,10 @@ KAPE is not immune to broken reparse points, but the main script and its jobs st
 
 ![](images/reparse-point-failure.png)
 
+# Known Limitations
+
+TODO: Fix the sequential mode so that outputs and evidences don't go into a zip loop.
+
 # Useful Links
 
 KAPE Getting Started Documentation :
