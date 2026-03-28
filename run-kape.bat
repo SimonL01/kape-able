@@ -7,7 +7,7 @@ REM - Selects a cli\*.cli preset by name/prefix
 REM - Materializes tokens %%1..%%8 and %%d %%m %%Y %%H %%M into _kape.cli
 REM - Executes ONE KAPE run PER TARGET (splits comma-separated --target lists)
 REM - Prints [OK]/[WARN]/[FAIL] per target and writes _kape.status.csv
-REM - Supports optional /parallel as a 5th arg
+REM - Supports optional /parallel and /nozip control flags
 REM ----------------------------------------------------------------------
 
 REM ===== ANSI colors (safe ASCII banner) =====
@@ -27,7 +27,7 @@ set "BGRN=%ESC%[92m"
 set "BCYN=%ESC%[96m"
 set "BMAG=%ESC%[95m"
 set "BYEL=%ESC%[93m"
-if not defined KAPE_MIN_FREE_GB set "KAPE_MIN_FREE_GB=10"
+if not defined KAPE_MIN_FREE_GB set "KAPE_MIN_FREE_GB=20"
 
 REM --- Paths ---
 set "SCRIPT_DIR=%~dp0"
@@ -53,6 +53,7 @@ if not exist "%CLI_DIR%" (
 REM --- Arguments ---
 set "ARG1=%~1"
 set "PARALLEL_FLAG="
+set "NOZIP_FLAG="
 
 if /i "%ARG1%"=="/?"      set "ARG1=/help"
 if /i "%ARG1%"=="-h"      set "ARG1=/help"
@@ -133,6 +134,28 @@ set "ARG6=%~7"
 set "ARG7=%~8"
 set "ARG8=%~9"
 
+REM Optional control flags can appear after DEST_ROOT, with or without ZIP_TAG
+if /i "%ARG3%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG3="
+if /i "%ARG4%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG4="
+if /i "%ARG5%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG5="
+if /i "%ARG6%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG6="
+if /i "%ARG7%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG7="
+if /i "%ARG8%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG8="
+
+if /i "%ARG3%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG3="
+if /i "%ARG4%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG4="
+if /i "%ARG5%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG5="
+if /i "%ARG6%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG6="
+if /i "%ARG7%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG7="
+if /i "%ARG8%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG8="
+
+if /i "%ARG3%"=="/raw" set "NOZIP_FLAG=1" & set "ARG3="
+if /i "%ARG4%"=="/raw" set "NOZIP_FLAG=1" & set "ARG4="
+if /i "%ARG5%"=="/raw" set "NOZIP_FLAG=1" & set "ARG5="
+if /i "%ARG6%"=="/raw" set "NOZIP_FLAG=1" & set "ARG6="
+if /i "%ARG7%"=="/raw" set "NOZIP_FLAG=1" & set "ARG7="
+if /i "%ARG8%"=="/raw" set "NOZIP_FLAG=1" & set "ARG8="
+
 REM Optional: a token starting with "/parallel" as arg 5-9 enables parallel exec
 if /i "%~5"=="/parallel" set "PARALLEL_FLAG=/parallel"
 if /i "%~6"=="/parallel" set "PARALLEL_FLAG=/parallel"
@@ -150,10 +173,13 @@ if not defined ARG2 (
     call :ShowUsage
     exit /b 6
 )
-if not defined ARG3 (
+if not defined ARG3 if not defined NOZIP_FLAG (
     echo [%BRED%ERROR%RST%] Missing ZIP tag.
     call :ShowUsage
     exit /b 6
+)
+if defined NOZIP_FLAG (
+    echo [%BYEL%INFO%RST%] Raw collection mode enabled. Any --zip option from the preset will be ignored.
 )
 
 REM --- Normalize drive-root-ish tokens (quality-of-life) ---
@@ -374,6 +400,8 @@ set "CMD_LINE=!_KAPE_LINE!"
 set "IDX=%~1"
 set "TGT=%~2"
 set "DO_PAR=%~3"
+
+if defined NOZIP_FLAG call :StripZipArgument CMD_LINE
 
 REM Extract --tdest (first token after it)
 set "DEST="
@@ -667,13 +695,26 @@ echo   %~nx0 /help                                 ^> %BYEL%Show this help and e
 echo   %~nx0 /banner                               ^> %BYEL%Show banner and exit%RST%
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG            ^> %BYEL%Name of CLI. Runs each CLI line, splits --target A,B,C%RST%
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /parallel  ^> %BYEL%Same, but run targets in parallel%RST%
+echo   %~nx0 NAME SRC DEST_ROOT /nozip             ^> %BYEL%Collect raw files only. Ignores any --zip in the preset%RST%
+echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /nozip     ^> %BYEL%Same as above, but keeps the usual argument shape%RST%
 echo %BCYN%Examples:%RST%
 echo   %~nx0 test "C:" ".\out" "CASE-SLO"
 echo   %~nx0 workstation "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
 echo   %~nx0 server "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
 echo   %~nx0 test "C:" ".\out" "CASE-SLO" /parallel
+echo   %~nx0 server "C:" ".\out" /nozip
 echo(
 exit /b 0
+
+:StripZipArgument
+setlocal EnableDelayedExpansion
+set "LINE=!%~1!"
+if not "!LINE: --zip =!"=="!LINE!" (
+  set "LINE=!LINE: --zip =|!"
+  for /f "tokens=1 delims=|" %%A in ("!LINE!") do set "LINE=%%A"
+)
+for /f "tokens=* delims= " %%A in ("!LINE!") do set "LINE=%%A"
+endlocal & set "%~1=%LINE%" & exit /b 0
 
 :ShowConfigs
 echo(
@@ -865,13 +906,6 @@ setlocal
   echo ===== ipconfig /all =====
   ipconfig /all
   echo.
-  echo ===== wmic os get caption,version,buildnumber =====
-  where wmic >nul 2>&1
-  if errorlevel 1 (
-    echo wmic is not available on this system.
-  ) else (
-    wmic os get caption^,version^,buildnumber /value
-  )
 ) > "%SYSTEM_CONTEXT_FILE%" 2>&1
 set "CTX_RC=%ERRORLEVEL%"
 endlocal & exit /b %CTX_RC%
