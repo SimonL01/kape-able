@@ -40,9 +40,14 @@ Usage:
       run-kape.bat /banner                                   > Show banner and exit
       run-kape.bat NAME SRC DEST_ROOT ZIP_TAG                > Name of CLI. Runs each CLI line, splits --target A,B,C
       run-kape.bat NAME SRC DEST_ROOT ZIP_TAG /parallel      > Same, but run targets in parallel
+      run-kape.bat NAME SRC DEST_ROOT /nozip                 > Collect raw files only. Ignores any --zip in the preset
+      run-kape.bat NAME SRC DEST_ROOT ZIP_TAG /nozip         > Same as above, but keeps the usual argument shape
 Examples:
       run-kape.bat test "C:" ".\out" "CASE-SLO"
+      run-kape.bat workstation "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
+      run-kape.bat server "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
       run-kape.bat test "C:" ".\out" "CASE-SLO" /parallel
+      run-kape.bat server "C:" ".\out" /nozip
 ```
 
 Do not forget that for the script to run, kape.exe must be present, with its folders and respective templates.
@@ -85,6 +90,8 @@ The later will have the console log of kape.exe using that target and the eviden
 │     └─ <timestamp>_<basename>.zip
 └─  ...
 ```
+
+With the `/nozip` flag, evidences are not zipped, making it easier to process them afterwards (highly recommended).
 
 # Target Consideration
 
