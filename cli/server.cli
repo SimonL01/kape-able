@@ -1,2 +1,10 @@
 --tsource %1 --tdest %2\triage_collections\ServerTriage_%d-%m --target ServerTriage --zip %3
---tsource %1 --tdest %2\triage_collections\ServerTriage_%d-%m --target "CombinedLogs,WebServers,RemoteAdmin,OpenSSHClient,OpenSSHServer,WindowsFirewall,GroupPolicy,WindowsDefender,PowerShellConsole" --zip %3
+--tsource %1 --tdest %2\triage_collections\CombinedLogs_%d-%m --target CombinedLogs --zip %3
+--tsource %1 --tdest %2\webservers_logs\WebServers_%d-%m --target WebServers --zip %3
+--tsource %1 --tdest %2\remote_access_vpn\RemoteAdmin_%d-%m --target RemoteAdmin --zip %3
+--tsource %1 --tdest %2\remote_access_vpn\OpenSSHClient_%d-%m --target OpenSSHClient --zip %3
+--tsource %1 --tdest %2\remote_access_vpn\OpenSSHServer_%d-%m --target OpenSSHServer --zip %3
+--tsource %1 --tdest %2\windows_artifacts\WindowsFirewall_%d-%m --target WindowsFirewall --zip %3
+--tsource %1 --tdest %2\windows_artifacts\GroupPolicy_%d-%m --target GroupPolicy --zip %3
+--tsource %1 --tdest %2\antivirus\WindowsDefender_%d-%m --target WindowsDefender --zip %3
+--tsource %1 --tdest %2\dev_sysadmin_tools\PowerShellConsole_%d-%m --target PowerShellConsole --zip %3
