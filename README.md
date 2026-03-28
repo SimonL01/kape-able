@@ -50,6 +50,8 @@ Examples:
       run-kape.bat server "C:" ".\out" /nozip
 ```
 
+It is highly recommended to run with the `full` cli configuration file for a full forensic data acquisition.
+
 Do not forget that for the script to run, kape.exe must be present, with its folders and respective templates.
 Example of the repository structure can be:
 ```text
