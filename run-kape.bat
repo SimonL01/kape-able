@@ -36,16 +36,9 @@ REM --- Paths ---
 set "SCRIPT_DIR=%~dp0"
 set "CLI_DIR=%SCRIPT_DIR%cli"
 
-REM If KAPE_TMP_DIR is set by the wrapper, write _kape.cli & status there
-if defined KAPE_TMP_DIR (
-  set "TARGET=%KAPE_TMP_DIR%_kape.cli"
-  set "STATUS_CSV=%KAPE_TMP_DIR%_kape.status.csv"
-) else (
-  set "TMPBASE=%TEMP%\kape_%RANDOM%%RANDOM%"
-  if not exist "%TMPBASE%" mkdir "%TMPBASE%" >nul 2>&1
-  set "TARGET=%TMPBASE%\_kape.cli"
-  set "STATUS_CSV=%TMPBASE%\_kape.status.csv"
-)
+REM Run-specific wrapper artifacts are assigned after JOBSDIR is created
+set "TARGET="
+set "STATUS_CSV="
 set "KAPE_EXE=%SCRIPT_DIR%kape.exe"
 
 if not exist "%CLI_DIR%" (
@@ -228,7 +221,7 @@ for %%V in (ARG1 ARG2 ARG3 ARG4 ARG5 ARG6 ARG7 ARG8) do (
 
 for %%I in ("%ARG2%") do set "CASE_ROOT=%%~fI"
 if not exist "%CASE_ROOT%" mkdir "%CASE_ROOT%" >nul 2>&1
-set "CASE_STATUS_CSV=%CASE_ROOT%\_kape.status.csv"
+set "CASE_STATUS_CSV="
 set "HASH_MANIFEST=%CASE_ROOT%\SHA256SUMS.txt"
 set "SYSTEM_CONTEXT_FILE=%CASE_ROOT%\SystemContext.txt"
 set "SUMMARY_FILE=%CASE_ROOT%\_kape.summary.txt"
@@ -270,6 +263,13 @@ if errorlevel 1 exit /b 8
 
 REM --- Compute date/time (DD, MM, YYYY, HH, MIN) ---
 call :GetNow
+
+REM --- Per-run temp job directory (unique so stale files never mix) ---
+set "JOBSDIR=%CASE_ROOT%\_kape_jobs\%KAPE_PRESET_SAFE%_%YYYY%%MM%%DD%_%HH%%MIN%_%RANDOM%"
+mkdir "%JOBSDIR%" >nul 2>&1
+set "TARGET=%JOBSDIR%\_kape.cli"
+set "STATUS_CSV=%JOBSDIR%\_kape.status.csv"
+set "CASE_STATUS_CSV=%JOBSDIR%\_kape.status.csv"
 
 call :CaptureSystemContext
 if errorlevel 1 (
@@ -325,10 +325,6 @@ if not exist "%KAPE_EXE%" (
     echo [%BRED%ERROR%RST%] kape.exe not found at "%KAPE_EXE%".
     exit /b 4
 )
-
-REM --- Per-run temp job directory (unique so stale files never mix) ---
-set "JOBSDIR=%CASE_ROOT%\_kape_jobs\%KAPE_PRESET_SAFE%_%YYYY%%MM%%DD%_%HH%%MIN%_%RANDOM%"
-mkdir "%JOBSDIR%" >nul 2>&1
 
 REM --- Prepare status CSV and run per target ---
 > "%STATUS_CSV%" echo target,line_index,rc,log_ok,zip_found,log_file,zip_path
