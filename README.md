@@ -32,6 +32,18 @@ Tip: /help for help and usage examples.
 > [!CAUTION]
 > Need Admin rights to run !!!
 
+Using the `full` preset is highly recommended for better forensic data acquisition.
+```cmd
+run-kape.bat full "C:" ".\out" /nozip /batonly /parallel
+```
+- `/batonly` and `/parallel` could be a problem on some systems. These are not mandatory and can be removed if necessary. Specifically the `/parallel` flag for systels that can't put too much pressure on RAM.
+
+Else:
+```cmd
+run-kape.bat full "C:" ".\out" /nozip
+```
+
+For more help information:
 ```sh
 C:\Users\Simon\KAPE\KAPE>run-kape /help
 Usage:
