@@ -29,6 +29,8 @@ set "BMAG=%ESC%[95m"
 set "BYEL=%ESC%[93m"
 if not defined KAPE_MIN_FREE_GB set "KAPE_MIN_FREE_GB=20"
 if not defined KAPE_MAX_PARALLEL set "KAPE_MAX_PARALLEL=4"
+if not defined KAPE_USE_EXTERNAL_TOOLS set "KAPE_USE_EXTERNAL_TOOLS=1"
+if not defined KAPE_DATE_ORDER set "KAPE_DATE_ORDER=DMY"
 
 REM --- Paths ---
 set "SCRIPT_DIR=%~dp0"
@@ -53,6 +55,15 @@ if not exist "%CLI_DIR%" (
 
 REM --- Arguments ---
 set "ARG1=%~1"
+set "KAPE_ORIG_ARG1=%~1"
+set "KAPE_ORIG_ARG2=%~2"
+set "KAPE_ORIG_ARG3=%~3"
+set "KAPE_ORIG_ARG4=%~4"
+set "KAPE_ORIG_ARG5=%~5"
+set "KAPE_ORIG_ARG6=%~6"
+set "KAPE_ORIG_ARG7=%~7"
+set "KAPE_ORIG_ARG8=%~8"
+set "KAPE_ORIG_ARG9=%~9"
 set "PARALLEL_FLAG="
 set "NOZIP_FLAG="
 
@@ -121,8 +132,6 @@ if not defined MATCH (
 )
 
 :FoundMatch
-echo(
-echo [%BYEL%INFO%RST%] Using CLI preset: "%MATCH%"
 call :MakeSafeName "%MATCH%" KAPE_PRESET_SAFE
 
 REM --- Capture extra arguments for template tokens %1..%9 ---
@@ -143,6 +152,27 @@ if /i "%ARG5%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG5="
 if /i "%ARG6%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG6="
 if /i "%ARG7%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG7="
 if /i "%ARG8%"=="/parallel" set "PARALLEL_FLAG=/parallel" & set "ARG8="
+
+if /i "%ARG3%"=="/batonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG3="
+if /i "%ARG4%"=="/batonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG4="
+if /i "%ARG5%"=="/batonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG5="
+if /i "%ARG6%"=="/batonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG6="
+if /i "%ARG7%"=="/batonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG7="
+if /i "%ARG8%"=="/batonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG8="
+
+if /i "%ARG3%"=="/batchonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG3="
+if /i "%ARG4%"=="/batchonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG4="
+if /i "%ARG5%"=="/batchonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG5="
+if /i "%ARG6%"=="/batchonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG6="
+if /i "%ARG7%"=="/batchonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG7="
+if /i "%ARG8%"=="/batchonly" set "KAPE_USE_EXTERNAL_TOOLS=0" & set "ARG8="
+
+if /i "%ARG3%"=="/external" set "KAPE_USE_EXTERNAL_TOOLS=1" & set "ARG3="
+if /i "%ARG4%"=="/external" set "KAPE_USE_EXTERNAL_TOOLS=1" & set "ARG4="
+if /i "%ARG5%"=="/external" set "KAPE_USE_EXTERNAL_TOOLS=1" & set "ARG5="
+if /i "%ARG6%"=="/external" set "KAPE_USE_EXTERNAL_TOOLS=1" & set "ARG6="
+if /i "%ARG7%"=="/external" set "KAPE_USE_EXTERNAL_TOOLS=1" & set "ARG7="
+if /i "%ARG8%"=="/external" set "KAPE_USE_EXTERNAL_TOOLS=1" & set "ARG8="
 
 if /i "%ARG3%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG3="
 if /i "%ARG4%"=="/nozip" set "NOZIP_FLAG=1" & set "ARG4="
@@ -182,7 +212,6 @@ if not defined ARG3 if not defined NOZIP_FLAG (
 )
 if defined NOZIP_FLAG (
     set "KAPE_EXPECT_ZIP=0"
-    echo [%BYEL%INFO%RST%] Raw collection mode enabled. Any --zip option from the preset will be ignored.
 ) else (
     set "KAPE_EXPECT_ZIP=1"
 )
@@ -203,8 +232,30 @@ set "CASE_STATUS_CSV=%CASE_ROOT%\_kape.status.csv"
 set "HASH_MANIFEST=%CASE_ROOT%\SHA256SUMS.txt"
 set "SYSTEM_CONTEXT_FILE=%CASE_ROOT%\SystemContext.txt"
 set "SUMMARY_FILE=%CASE_ROOT%\_kape.summary.txt"
+set "CONSOLE_TRANSCRIPT=%CASE_ROOT%\_kape.console.txt"
+set "KAPE_CONSOLE_TRANSCRIPT=%CONSOLE_TRANSCRIPT%"
 set "KAPE_CASE_ROOT=%CASE_ROOT%"
 set "KAPE_PRESET_NAME=%MATCH%"
+
+call :NormalizeExternalToolsFlag
+
+if "%KAPE_USE_EXTERNAL_TOOLS%"=="1" if /i not "%KAPE_CONSOLE_TEE_ACTIVE%"=="1" (
+  set "KAPE_SELF=%~f0"
+  powershell -NoProfile -Command ^
+    "$env:KAPE_CONSOLE_TEE_ACTIVE='1'; $argsList = @(); foreach ($i in 1..9) { $name = 'KAPE_ORIG_ARG' + $i; $value = [Environment]::GetEnvironmentVariable($name); if ($null -ne $value -and $value -ne '') { $argsList += $value } }; & $env:KAPE_SELF @argsList 2>&1 | Tee-Object -LiteralPath $env:KAPE_CONSOLE_TRANSCRIPT; $exitCode = $LASTEXITCODE; exit $exitCode"
+  exit /b !ERRORLEVEL!
+)
+
+echo(
+echo [%BYEL%INFO%RST%] Using CLI preset: "%MATCH%"
+if "%KAPE_USE_EXTERNAL_TOOLS%"=="1" (
+  echo [%BYEL%INFO%RST%] Extended helper mode enabled.
+) else (
+  echo [%BYEL%INFO%RST%] Batch-native mode enabled. Transcript, hashing, free-space, and external helper commands are disabled.
+)
+if defined NOZIP_FLAG (
+  echo [%BYEL%INFO%RST%] Raw collection mode enabled. Any --zip option from the preset will be ignored.
+)
 
 call :NormalizeParallelLimit
 if /i "%PARALLEL_FLAG%"=="/parallel" (
@@ -310,6 +361,11 @@ echo [%BYEL%INFO%RST%] Status CSV: "%CASE_STATUS_CSV%"
 echo [%BYEL%INFO%RST%] SHA256 manifest: "%HASH_MANIFEST%"
 echo [%BYEL%INFO%RST%] System context: "%SYSTEM_CONTEXT_FILE%"
 echo [%BYEL%INFO%RST%] Summary file: "%SUMMARY_FILE%"
+if "%KAPE_USE_EXTERNAL_TOOLS%"=="1" (
+  echo [%BYEL%INFO%RST%] Console transcript: "%CONSOLE_TRANSCRIPT%"
+) else (
+  echo [%BYEL%INFO%RST%] Console transcript: disabled in batch-native mode.
+)
 if defined SUM_TOTAL (
   echo [%BYEL%INFO%RST%] Final summary: total=!SUM_TOTAL! ok=!SUM_OK! warn=!SUM_WARN! fail=!SUM_FAIL!
 )
@@ -818,13 +874,18 @@ echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG            ^> %BYEL%Name of CLI. Runs ea
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /parallel  ^> %BYEL%Same, but run targets in parallel%RST%
 echo   %~nx0 NAME SRC DEST_ROOT /nozip             ^> %BYEL%Collect raw files only. Ignores any --zip in the preset%RST%
 echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /nozip     ^> %BYEL%Same as above, but keeps the usual argument shape%RST%
+echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /batonly   ^> %BYEL%Disable PowerShell, transcript, hashing, free-space, and external helper commands%RST%
+echo   %~nx0 NAME SRC DEST_ROOT ZIP_TAG /external  ^> %BYEL%Force extended helper mode ^(default^)%RST%
 echo   set KAPE_MAX_PARALLEL=4                     ^> %BYEL%Optional: cap /parallel concurrency ^(default 4^)%RST%
+echo   set KAPE_USE_EXTERNAL_TOOLS=0               ^> %BYEL%Optional: default to batch-native mode%RST%
+echo   set KAPE_DATE_ORDER=DMY                     ^> %BYEL%Optional: batch-native fallback date order ^(DMY or MDY^)%RST%
 echo %BCYN%Examples:%RST%
 echo   %~nx0 test "C:" ".\out" "CASE-SLO"
 echo   %~nx0 workstation "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
 echo   %~nx0 server "C:" "E:\Cases\CASE-001\HOST01" "CASE-001_HOST01"
 echo   %~nx0 test "C:" ".\out" "CASE-SLO" /parallel
 echo   %~nx0 server "C:" ".\out" /nozip
+echo   %~nx0 full "C:" ".\out" /nozip /batonly
 echo(
 exit /b 0
 
@@ -855,6 +916,7 @@ echo(
 exit /b 0
 
 :GetNow
+if not "%KAPE_USE_EXTERNAL_TOOLS%"=="1" goto :GetNow_Batch
 setlocal EnableExtensions EnableDelayedExpansion
 for /f "skip=1 delims=" %%T in ('
   wmic os get LocalDateTime 2^>nul ^| findstr /R "^[0-9]"
@@ -900,6 +962,59 @@ set "DD=0!DD!"  & set "DD=!DD:~-2!"
 set "HH=0!HH!"  & set "HH=!HH:~-2!"
 set "MIN=0!MIN!"& set "MIN=!MIN:~-2!"
 :gn_export
+endlocal & (
+  set "YYYY=%YYYY%"
+  set "MM=%MM%"
+  set "DD=%DD%"
+  set "HH=%HH%"
+  set "MIN=%MIN%"
+)
+exit /b 0
+
+:GetNow_Batch
+setlocal EnableExtensions EnableDelayedExpansion
+set "rawDate=%DATE%"
+set "rawTime=%TIME: =0%"
+set "HH=!rawTime:~0,2!"
+set "MIN=!rawTime:~3,2!"
+set "p1="
+set "p2="
+set "p3="
+set "p4="
+for /f "tokens=1-4 delims=/.- " %%a in ("!rawDate!") do (
+  set "p1=%%a"
+  set "p2=%%b"
+  set "p3=%%c"
+  set "p4=%%d"
+)
+call :IsDigits "!p1!" P1_NUM
+if /i "!P1_NUM!"=="false" (
+  set "p1=!p2!"
+  set "p2=!p3!"
+  set "p3=!p4!"
+)
+call :IsYearLike "!p1!" P1_YEAR
+call :IsYearLike "!p3!" P3_YEAR
+if /i "!P1_YEAR!"=="true" (
+  set "YYYY=!p1!"
+  set "MM=!p2!"
+  set "DD=!p3!"
+) else (
+  if /i "!P3_YEAR!"=="true" (
+    set "YYYY=!p3!"
+  ) else (
+    set "YYYY=!p3!"
+  )
+  call :ResolveMonthDay "!p1!" "!p2!" MM DD
+)
+if not defined YYYY set "YYYY=0000"
+if not defined MM set "MM=01"
+if not defined DD set "DD=01"
+set "YYYY=0000!YYYY!" & set "YYYY=!YYYY:~-4!"
+set "MM=0!MM!" & set "MM=!MM:~-2!"
+set "DD=0!DD!" & set "DD=!DD:~-2!"
+set "HH=0!HH!" & set "HH=!HH:~-2!"
+set "MIN=0!MIN!" & set "MIN=!MIN:~-2!"
 endlocal & (
   set "YYYY=%YYYY%"
   set "MM=%MM%"
@@ -961,6 +1076,13 @@ if errorlevel 1 (
 endlocal & exit /b 0
 
 :WriteHashManifest
+if not "%KAPE_USE_EXTERNAL_TOOLS%"=="1" (
+  > "%HASH_MANIFEST%" (
+    echo SHA256 manifest skipped in batch-native mode.
+    echo CaseRoot=%KAPE_CASE_ROOT%
+  )
+  exit /b 0
+)
 setlocal
 set "KAPE_HASH_MANIFEST=%HASH_MANIFEST%"
 powershell -NoProfile -Command ^
@@ -969,6 +1091,7 @@ set "PS_RC=%ERRORLEVEL%"
 endlocal & exit /b %PS_RC%
 
 :WriteFinalSummary
+if not "%KAPE_USE_EXTERNAL_TOOLS%"=="1" goto :WriteFinalSummary_Batch
 setlocal
 set "KAPE_STATUS_FILE=%CASE_STATUS_CSV%"
 set "KAPE_SUMMARY_FILE=%SUMMARY_FILE%"
@@ -983,7 +1106,45 @@ endlocal & (
   exit /b %PS_RC%
 )
 
+:WriteFinalSummary_Batch
+setlocal EnableDelayedExpansion
+set "SUM_TOTAL=0"
+set "SUM_OK=0"
+set "SUM_WARN=0"
+set "SUM_FAIL=0"
+if exist "%CASE_STATUS_CSV%" (
+  for /f "usebackq skip=1 tokens=1-5 delims=," %%A in ("%CASE_STATUS_CSV%") do (
+    set "ROW_TARGET=%%A"
+    set "ROW_RC=%%C"
+    set "ROW_LOG_OK=%%D"
+    set "ROW_ZIP_FOUND=%%E"
+    call :NormalizeSummaryTarget "!ROW_TARGET!" SUMMARY_KEY SUMMARY_IS_RETRY
+    call :DetermineOutcome "!ROW_RC!" "!ROW_LOG_OK!" "!ROW_ZIP_FOUND!" ROW_STATUS
+    call :RememberSummaryStatus "!SUMMARY_KEY!" "!ROW_STATUS!" "!SUMMARY_IS_RETRY!"
+  )
+)
+> "%SUMMARY_FILE%" (
+  echo Preset=%KAPE_PRESET_NAME%
+  echo CaseRoot=%KAPE_CASE_ROOT%
+  echo Total=!SUM_TOTAL!
+  echo OK=!SUM_OK!
+  echo WARN=!SUM_WARN!
+  echo FAIL=!SUM_FAIL!
+)
+set "SUMMARY_RC=%ERRORLEVEL%"
+endlocal & (
+  set "SUM_TOTAL=%SUM_TOTAL%"
+  set "SUM_OK=%SUM_OK%"
+  set "SUM_WARN=%SUM_WARN%"
+  set "SUM_FAIL=%SUM_FAIL%"
+  exit /b %SUMMARY_RC%
+)
+
 :RequireAdmin
+if not "%KAPE_USE_EXTERNAL_TOOLS%"=="1" (
+    echo [%BYEL%WARN%RST%] Administrative privilege check skipped in batch-native mode.
+    exit /b 0
+)
 fltmc >nul 2>&1
 if errorlevel 1 (
     echo [%BRED%ERROR%RST%] Administrative privileges are required. Re-run this shell as Administrator.
@@ -993,6 +1154,10 @@ echo [%BYEL%INFO%RST%] Administrative privilege check passed.
 exit /b 0
 
 :CheckFreeSpace
+if not "%KAPE_USE_EXTERNAL_TOOLS%"=="1" (
+    echo [%BYEL%INFO%RST%] Free-space check skipped in batch-native mode.
+    exit /b 0
+)
 setlocal EnableDelayedExpansion
 set "KAPE_FREE_PATH=%~1"
 set "FREE_GB="
@@ -1021,16 +1186,23 @@ setlocal
   echo ParallelMode: %PARALLEL_FLAG%
   echo MaxParallel: %KAPE_MAX_PARALLEL%
   echo ZipExpected: %KAPE_EXPECT_ZIP%
+  echo ExternalTools: %KAPE_USE_EXTERNAL_TOOLS%
   echo.
-  echo ===== hostname =====
-  hostname
-  echo.
-  echo ===== whoami =====
-  whoami
-  echo.
-  echo ===== ipconfig /all =====
-  ipconfig /all
-  echo.
+  if "%KAPE_USE_EXTERNAL_TOOLS%"=="1" (
+    echo ===== hostname =====
+    hostname
+    echo.
+    echo ===== whoami =====
+    whoami
+    echo.
+    echo ===== ipconfig /all =====
+    ipconfig /all
+    echo.
+  ) else (
+    echo ===== external commands skipped =====
+    echo hostname, whoami, and ipconfig are disabled in batch-native mode.
+    echo.
+  )
 ) > "%SYSTEM_CONTEXT_FILE%" 2>&1
 set "CTX_RC=%ERRORLEVEL%"
 endlocal & exit /b %CTX_RC%
@@ -1044,6 +1216,103 @@ for /f "delims=0123456789" %%A in ("%RAW%") do set "BAD=%%A"
 if defined BAD set "RAW=4"
 if "%RAW%"=="0" set "RAW=4"
 endlocal & set "KAPE_MAX_PARALLEL=%RAW%" & exit /b 0
+
+:NormalizeExternalToolsFlag
+setlocal
+set "RAW=%KAPE_USE_EXTERNAL_TOOLS%"
+if not defined RAW set "RAW=1"
+if /i "%RAW%"=="true" set "RAW=1"
+if /i "%RAW%"=="yes" set "RAW=1"
+if /i "%RAW%"=="on" set "RAW=1"
+if /i "%RAW%"=="false" set "RAW=0"
+if /i "%RAW%"=="no" set "RAW=0"
+if /i "%RAW%"=="off" set "RAW=0"
+if not "%RAW%"=="0" if not "%RAW%"=="1" set "RAW=1"
+endlocal & set "KAPE_USE_EXTERNAL_TOOLS=%RAW%" & exit /b 0
+
+:NormalizeSummaryTarget
+setlocal EnableDelayedExpansion
+set "NAME=%~1"
+set "IS_RETRY=0"
+if /i "!NAME:~-6!"=="_retry" (
+  set "NAME=!NAME:~0,-6!"
+  set "IS_RETRY=1"
+)
+call :MakeSafeName "!NAME!" KEY
+if not defined KEY set "KEY=target"
+endlocal & (
+  set "%~2=%KEY%"
+  set "%~3=%IS_RETRY%"
+  exit /b 0
+)
+
+:RememberSummaryStatus
+set "SUMMARY_KEY=%~1"
+set "SUMMARY_STATUS=%~2"
+set "SUMMARY_IS_RETRY=%~3"
+call set "SUMMARY_OLD=%%SUM_STATE_%SUMMARY_KEY%%%"
+if defined SUMMARY_OLD if /i not "%SUMMARY_IS_RETRY%"=="1" exit /b 0
+if defined SUMMARY_OLD call :AdjustSummaryCount "%SUMMARY_OLD%" -1
+if not defined SUMMARY_OLD set /a SUM_TOTAL+=1
+call :AdjustSummaryCount "%SUMMARY_STATUS%" 1
+call set "SUM_STATE_%SUMMARY_KEY%=%SUMMARY_STATUS%"
+exit /b 0
+
+:AdjustSummaryCount
+if /i "%~1"=="OK" set /a SUM_OK+=%~2
+if /i "%~1"=="WARN" set /a SUM_WARN+=%~2
+if /i "%~1"=="FAIL" set /a SUM_FAIL+=%~2
+exit /b 0
+
+:IsDigits
+setlocal
+set "VALUE=%~1"
+set "RESULT=true"
+if not defined VALUE set "RESULT=false"
+for /f "delims=0123456789" %%A in ("%VALUE%") do if not "%%A"=="" set "RESULT=false"
+endlocal & set "%~2=%RESULT%" & exit /b 0
+
+:IsYearLike
+setlocal
+set "VALUE=%~1"
+set "RESULT=false"
+if defined VALUE if not "%VALUE:~3,1%"=="" if "%VALUE:~4,1%"=="" (
+  set "BAD="
+  for /f "delims=0123456789" %%A in ("%VALUE%") do if not "%%A"=="" set "BAD=1"
+  if not defined BAD set "RESULT=true"
+)
+endlocal & set "%~2=%RESULT%" & exit /b 0
+
+:ResolveMonthDay
+setlocal EnableDelayedExpansion
+set "A=%~1"
+set "B=%~2"
+set "ORDER=%KAPE_DATE_ORDER%"
+if not defined ORDER set "ORDER=DMY"
+call :IsDigits "!A!" A_NUM
+call :IsDigits "!B!" B_NUM
+if /i not "!A_NUM!"=="true" set "A=1"
+if /i not "!B_NUM!"=="true" set "B=1"
+set /a AVAL=1!A! - 100
+set /a BVAL=1!B! - 100
+if !AVAL! gtr 12 if !BVAL! leq 12 (
+  set "MM=!B!"
+  set "DD=!A!"
+) else if !BVAL! gtr 12 if !AVAL! leq 12 (
+  set "MM=!A!"
+  set "DD=!B!"
+) else if /i "!ORDER!"=="MDY" (
+  set "MM=!A!"
+  set "DD=!B!"
+) else (
+  set "MM=!B!"
+  set "DD=!A!"
+)
+endlocal & (
+  set "%~3=%MM%"
+  set "%~4=%DD%"
+  exit /b 0
+)
 
 :MakeSafeName
 setlocal EnableDelayedExpansion
