@@ -411,6 +411,7 @@ set "IDX=%~1"
 set "TGT=%~2"
 set "DO_PAR=%~3"
 
+call :RestoreBangTarget CMD_LINE "%TGT%"
 if defined NOZIP_FLAG call :StripZipArgument CMD_LINE
 
 REM Extract --tdest (first token after it)
@@ -441,8 +442,7 @@ echo(!TGT!>"!TGTFILE!"
 >  "!JOBFILE!" echo @echo off
 >> "!JOBFILE!" echo setlocal EnableExtensions DisableDelayedExpansion
 >> "!JOBFILE!" echo cd /d "%SCRIPT_DIR%"
->> "!JOBFILE!" echo "%KAPE_EXE%" !CMD_LINE! 0^< nul 1^> "!LOG_ONE!" 2^>^&1
->> "!JOBFILE!" echo (echo %%errorlevel%%)^> "!RCFILE!"
+call :AppendJobCommand "!JOBFILE!" CMD_LINE "!LOG_ONE!" "!RCFILE!"
 
 if /i "!DO_PAR!"=="/parallel" (
   REM Throttle: wait until fewer than KAPE_MAX_PARALLEL jobs are running
@@ -682,6 +682,39 @@ endlocal & (
   set "%~5=%OKLOG%"
 )
 exit /b 0
+
+:RestoreBangTarget
+REM %~1=variable name holding command line, %~2=plain target name
+setlocal DisableDelayedExpansion
+set "TARGET_NAME=%~2"
+if not defined TARGET_NAME endlocal & exit /b 0
+if "%TARGET_NAME:~0,2%"=="^!" set "TARGET_NAME=%TARGET_NAME:~2%"
+if "%TARGET_NAME:~0,1%"=="!" set "TARGET_NAME=%TARGET_NAME:~1%"
+if not defined TARGET_NAME endlocal & exit /b 0
+dir /b /s /a:-d "%SCRIPT_DIR%Targets\!%TARGET_NAME%.tkape" >nul 2>&1
+if errorlevel 1 endlocal & exit /b 0
+call set "LINE=%%%~1%%"
+if not defined LINE endlocal & exit /b 0
+call set "LINE=%%LINE:--target %TARGET_NAME%=--target __KAPE_BANG__%TARGET_NAME%%%"
+call set "LINE=%%LINE:--target !%TARGET_NAME%=--target __KAPE_BANG__%TARGET_NAME%%%"
+call set "LINE=%%LINE:--target ^!%TARGET_NAME%=--target __KAPE_BANG__%TARGET_NAME%%%"
+call set "LINE=%%LINE:--target \"%TARGET_NAME%\"=--target \"__KAPE_BANG__%TARGET_NAME%\"%%"
+call set "LINE=%%LINE:--target \"!%TARGET_NAME%\"=--target \"__KAPE_BANG__%TARGET_NAME%\"%%"
+call set "LINE=%%LINE:--target \"^!%TARGET_NAME%\"=--target \"__KAPE_BANG__%TARGET_NAME%\"%%"
+endlocal & set "%~1=%LINE%" & exit /b 0
+
+:AppendJobCommand
+REM %~1=job file  %~2=variable name holding command line  %~3=log file  %~4=rc file
+setlocal DisableDelayedExpansion
+set "JOBFILE=%~1"
+set "LOGFILE=%~3"
+set "RCFILE=%~4"
+call set "LINE=%%%~2%%"
+if not defined LINE endlocal & exit /b 1
+set "LINE=%LINE:__KAPE_BANG__=!%"
+>> "%JOBFILE%" echo "%KAPE_EXE%" %LINE% 0^< nul 1^> "%LOGFILE%" 2^>^&1
+>> "%JOBFILE%" echo (echo %%errorlevel%%)^> "%RCFILE%"
+endlocal & exit /b 0
 
 :RenameDestinationLogs
 REM %~1=DEST folder  %~2=target name  %~3=optional suffix tag (e.g. retry)
