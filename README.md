@@ -122,7 +122,16 @@ KAPE is not immune to broken reparse points, but the main script and its jobs st
 
 # Known Limitations
 
-TODO: Fix the sequential mode so that outputs and evidences don't go into a zip loop.
+TODO: Fix the sequential mode so that outputs and evidences don't go into a zip loop when flag `/nozip` is not used.
+
+Also, if for any reason, you are editing this file using a UNIX-like environment, pay attention to `LF` characters as Windows native `.bat` files won't be parsed correctly.
+An easy fix is to use PowerShell to fix the line endings for `CRLF`:
+```powershell
+(Get-Content "run-kape.bat") | Set-Content "run-kape.bat"
+```
+- `(Get-Content "...")`: Reads the entire file into memory line-by-line. The parentheses are crucial because they ensure PowerShell finishes reading and closes the file before moving to the next step (otherwise, you'd get a "file in use" error). In doing so, it strips away the existing line endings (whether they are LF or CRLF).
+- `|`: Pipes those lines to the next command.
+- `Set-Content "..."`: Writes the lines back into the same file. Since you are on Windows, Set-Content automatically appends the standard Windows CRLF (Carriage Return + Line Feed) to the end of every line.
 
 # Useful Links
 
