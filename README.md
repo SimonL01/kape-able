@@ -36,7 +36,7 @@ Using the `full` preset is highly recommended for better forensic data acquisiti
 ```cmd
 run-kape.bat full "C:" ".\out" /nozip /batonly /parallel
 ```
-- `/batonly` and `/parallel` could be a problem on some systems. These are not mandatory and can be removed if necessary. Specifically the `/parallel` flag for systels that can't put too much pressure on RAM.
+- `/batonly` and `/parallel` could be a problem on some systems. These are not mandatory and can be removed if necessary. Specifically the `/parallel` flag for systems that can't put too much pressure on RAM.
 
 Else:
 ```cmd
