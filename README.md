@@ -95,13 +95,15 @@ For instance, have a look at 'cli/windows-parallel.cli' and 'cli/windows-seq.cli
 # Output
 
 The output folder specified in the command line will create for each preset (classification of which type of target), a folder with the name of the target.
-The later will have the console log of kape.exe using that target and the evidences zipped.
+The later will have the console log of kape.exe using that target and the evidences zipped if no `/nozip` flag.
 ```text
 <output_name>/
+├─ _kape_jobs/
 ├─ <preset_name>/
 │  └─ <target_name>_day_month
-│     ├─ <timestamp>_ConsoleLog.txt
-│     └─ <timestamp>_<basename>.zip
+│     ├─ <evidences>
+│     ├─ <target_name>_<timestamp>_ConsoleLog.txt
+│     └─ <target_name>_<timestamp>_<basename>.zip
 └─  ...
 ```
 
